@@ -21,11 +21,10 @@ jobs:
 
       - name: Run TruffleHog on PR Changes
         id: trufflehog
-        continue-on-error: true  # Prevents GitHub Actions from stopping immediately
+        continue-on-error: true
         run: |
-          BASE_COMMIT=$(git merge-base origin/main HEAD)
-          echo "Base commit for comparison: $BASE_COMMIT"
-          trufflehog git --since-commit=$BASE_COMMIT --json > secrets.json || true
+          echo "Running TruffleHog to detect secrets..."
+          trufflehog git --branch=main --json . > secrets.json || true
 
       - name: Check for Secrets
         run: |
