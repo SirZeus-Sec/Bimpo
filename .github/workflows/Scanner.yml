@@ -1,37 +1,47 @@
-name: Secret Scan
+name: TruffleHog Secret Scan on PR
 
 on:
   pull_request:
     branches:
-      - main
+      - main  # Change this if needed
 
 jobs:
-  secret-scan:
-    name: TruffleHog Secret Scan
+  trufflehog_scan:
+    name: Scan PR for Secrets
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Code with Full History
+      - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch full history to compare changes
+          fetch-depth: 2  # Ensures we get the previous commit for accurate diffs
 
       - name: Install TruffleHog
-        run: pip install trufflehog
+        run: pip install trufflehog==2.1.0  # Install TruffleHog v2 (better regex support)
 
-      - name: Run TruffleHog on PR Changes
-        id: trufflehog
-        continue-on-error: true  # Prevents GitHub Actions from stopping immediately
+      - name: Get Changed Files
+        id: changed-files
         run: |
-          BASE_COMMIT=$(git merge-base origin/main HEAD)
-          echo "Base commit for comparison: $BASE_COMMIT"
-          trufflehog git --since-commit=$BASE_COMMIT --json > secrets.json || true
+          git fetch origin ${{ github.event.repository.default_branch }}
+          echo "CHANGED_FILES=$(git diff --name-only origin/${{ github.event.repository.default_branch }} HEAD | tr '\n' ' ')" >> $GITHUB_ENV
 
-      - name: Check for Secrets
+      - name: Run TruffleHog on Changed Files
         run: |
-          if grep -q '"SourceType": "git"' secrets.json; then
-            echo "❌ Secret detected in PR!"
-            exit 1
-          else
-            echo "✅ No secrets found."
-          fi
+          EXIT_CODE=0
+          for file in $CHANGED_FILES; do
+            if [[ -f "$file" ]]; then
+              echo "Scanning $file..."
+              RESULT=$(trufflehog --regex --entropy=True "$file" 2>&1)
+              echo "$RESULT"
+              
+              # If secrets are found, set EXIT_CODE to 1
+              if echo "$RESULT" | grep -q 'Reason:'; then
+                  EXIT_CODE=1
+              fi
+            fi
+          done
+          exit $EXIT_CODE  # Exit with 1 if secrets are found
+
+      - name: Fail if Secrets Were Found
+        if: failure()
+        run: exit 1
