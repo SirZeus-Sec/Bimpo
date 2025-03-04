@@ -1,0 +1,37 @@
+name: Secret Scan
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  secret-scan:
+    name: TruffleHog Secret Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code with Full History
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch full history to compare changes
+
+      - name: Install TruffleHog
+        run: pip install trufflehog
+
+      - name: Run TruffleHog on PR Changes
+        id: trufflehog
+        continue-on-error: true  # Prevents GitHub Actions from stopping immediately
+        run: |
+          BASE_COMMIT=$(git merge-base origin/main HEAD)
+          echo "Base commit for comparison: $BASE_COMMIT"
+          trufflehog git --since-commit=$BASE_COMMIT --json > secrets.json || true
+
+      - name: Check for Secrets
+        run: |
+          if grep -q '"SourceType": "git"' secrets.json; then
+            echo "❌ Secret detected in PR!"
+            exit 1
+          else
+            echo "✅ No secrets found."
+          fi
